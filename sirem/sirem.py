@@ -138,7 +138,7 @@ def parse_arguments():
     parser.add_argument('--jira-username', help='jira username to use')
     parser.add_argument('--jira-password', help='jira password to use')
     parser.add_argument('--jira-project', help='jira password to use')
-    parser.add_argument('--jira-content-regex', default='^.*$')
+    parser.add_argument('--content-regex', default='^.*$')
     parser.add_argument('--jql', help='jql to use to get issues', default='issuetype != sub-task')
     parser.add_argument('--jira-version-template', help='template to create versions in Jira. use {version} to indicate the original version tag. For example, if the template is "Release {version}", then the version "v1.0.0" will be called "Release v1.0.0" in Jira', default='{version}')
 
@@ -224,7 +224,7 @@ def get_version_status(options, tag, version):
         for content in ms['scope']:
             scope_status.setdefault(content['ref'], {'ref': content['ref'], 'summary': content['summary'], 'labels': content['labels'], 'milestones': []})
             scope_status[content['ref']]['milestones'].append(ms['name'])
-    status['scope_status'] = scope_status.values()
+    status['scope_status'] = list(scope_status.values())
     for x in release_candidates_tags:
         x['release_candidate_number'] = re.match('^.*-rc.([0-9]*)$', x['tag']).groups()[0]
         x['status'] = 'rejected'
@@ -241,7 +241,7 @@ def get_version_status(options, tag, version):
     status['release_candidates'] = release_candidates_tags
     for i in range(1, len(release_candidates_tags)):
         release_candidates_tags[i]['commits'] = get_diff(release_candidates_tags[i - 1]['tag'], release_candidates_tags[i]['tag'])
-        release_candidates_tags[i]['content'] = list(set(itertools.chain(*[re.findall(options.jira_content_regex, x) for x in release_candidates_tags[i]['commits']])))
+        release_candidates_tags[i]['content'] = list(set(itertools.chain(*[re.findall(options.content_regex, x) for x in release_candidates_tags[i]['commits']])))
 
     return status
 
