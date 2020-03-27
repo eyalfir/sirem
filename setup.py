@@ -8,4 +8,7 @@ setup(name='sirem',
       install_requires=['PyYAML>=5.3.1', 'requests>=2.23.0', 'jira>=2.0.0', 'Jinja2>=2.10'],
       scripts=['bin/sirem'],
       setup_requires=['setuptools_scm'],
+      package_data = {
+        'sirem': ['report.template.html', 'report.template.md'],
+      },
       use_scm_version=True)
