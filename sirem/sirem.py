@@ -1,8 +1,9 @@
 import re
+import argparse
 import itertools
 import subprocess
 import os
-import argparse
+import configargparse
 import logging
 import sys
 from datetime import datetime, date
@@ -15,18 +16,17 @@ EXIT_CODE_VERSION_NOT_FOUND = 1
 EXIT_CODE_BAD_VERSION_FILE = 2
 EXIT_CODE_VERSION_EXIST = 3
 TIME_PATTERN = '%Y-%m-%d'
-DEFAFULT_CONFIG_FILE = '.sirem'
 requests.warnings.filterwarnings('ignore')
 
 
 def get_jira(options):
     return JIRA(options.jira_baseurl, basic_auth=(options.jira_username, options.jira_password))
 
-def issue_to_dict(issue):
+def jira_issue_to_dict(issue):
     return {
             'ref': issue.key,
             'summary': issue.fields.summary,
-            'priority': issue.fields.priority.name
+            'labels': ['type:' + issue.fields.issuetype.name, 'priority:' + issue.fields.priority.name]
             }
 def func_set_description(options):
     version = options.versions[options.tag]
@@ -51,12 +51,14 @@ def func_import_scope(options):
     issues = get_all_tickets_for_filter(options, jql)
     logging.debug('got %d issues: %s', len(issues), str([x.key for x in issues]))
     current_versions = options.current_context['versions']
-    version = next(version for version in options.versions.values() if version.tag == options.version)
-    if not version:
+    if options.version not in options.versions:
         sys.stderr.write('ERROR: Version %s not found in %s.\n' % (options.version, options.versions_file))
         sys.exit(EXIT_CODE_VERSION_NOT_FOUND)
-    version['scoping_date'] = datetime.now().strftime('%Y-%m-%d')
-    version['scope'] = [issue_to_dict(x) for x in issues]
+    version = options.versions[options.version]
+    if options.milestone not in version.get_milestones():
+        version.set_milestone(option.milestone, datetime.now().date())
+    scope_entries = [jira_issue_to_dict(x) for x in issues]
+    version.get_milestones()[options.milestone].scope = scope_entries
     dump(options)
 
 def dump(options):
@@ -85,7 +87,7 @@ def func_sync_jira(options):
 
 def get_all_tickets_for_filter(options, jql):
     jira = get_jira(options)
-    issues = jira.search_issues(jql, maxResults=1000, fields='summary,priority')
+    issues = jira.search_issues(jql, maxResults=1000, fields='summary,issuetype,priority')
     return issues
 
 def func_create_version(options):
@@ -116,22 +118,36 @@ def valid_date(s):
         msg = "Not a valid date: '{0}'.".format(s)
         raise argparse.ArgumentTypeError(msg)
 
+def dir_route(path):
+    up = os.path.realpath(os.path.join(path, '..'))
+    if up == os.path.realpath(path):
+        return []
+    else:
+        return dir_route(up) + [path]
+
+def func_list_versions(options):
+    print('\n'.join(x for x in options.versions.keys()))
+
 def parse_arguments():
-    parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
+    config_files = [os.path.join(x, '.sirem') for x in dir_route(os.getcwd())]
+    parser = configargparse.ArgParser(default_config_files=[os.path.join(os.environ['HOME'], '.sirem')] + config_files)
+    parser.add_argument('-c', '--config', is_config_file=True, help='config file path')
     parser.add_argument('-f', '--versions-file', help='path of versions file. defaults to VERSIONS.yaml', default='VERSIONS.yaml')
     parser.add_argument('-v', '--verbose', help='debug level set to DEBUG', action='store_true')
+    parser.add_argument('--jira-baseurl', help='base url of the jira instance')
+    parser.add_argument('--jira-username', help='jira username to use')
+    parser.add_argument('--jira-password', help='jira password to use')
+    parser.add_argument('--jira-project', help='jira password to use')
+    parser.add_argument('--jira-content-regex', default='^.*$')
+    parser.add_argument('--jql', help='jql to use to get issues', default='issuetype != sub-task')
+    parser.add_argument('--jira-version-template', help='template to create versions in Jira. use {version} to indicate the original version tag. For example, if the template is "Release {version}", then the version "v1.0.0" will be called "Release v1.0.0" in Jira', default='{version}')
 
     subparsers = parser.add_subparsers(dest='command', required=True)
     jira_parser = subparsers.add_parser('jira')
-    jira_parser.add_argument('--jira-baseurl', help='base url of the jira instance')
-    jira_parser.add_argument('--jira-username', help='jira username to use')
-    jira_parser.add_argument('--jira-password', help='jira password to use')
-    jira_parser.add_argument('--jira-project', help='jira password to use')
-    jira_parser.add_argument('--jql', help='jql to use to get issues', default='issuetype != sub-task')
-    jira_parser.add_argument('--jira-version-template', help='template to create versions in Jira. use {version} to indicate the original version tag. For example, if the template is "Release {version}", then the version "v1.0.0" will be called "Release v1.0.0" in Jira', default='{version}')
     jira_subparser = jira_parser.add_subparsers(dest='jira_sub_command', required=True)
-    parser_import_scope = jira_subparser.add_parser('import-scope', help='contact jira to find the scope of a version, then populate the `scope` and `scoping date` fields of that version')
+    parser_import_scope = jira_subparser.add_parser('import-scope', help='contact jira to find the scope of a version, then populate the `scope` of a milestone')
     parser_import_scope.add_argument('version', help='the version to import')
+    parser_import_scope.add_argument('milestone', help='the milestone associated with the imported scope')
     parser_import_scope.set_defaults(func=func_import_scope)
 
     parser_sync_jira = jira_subparser.add_parser('sync', help='update jira versions according to the versions file')
@@ -140,6 +156,9 @@ def parse_arguments():
 
     versions_parser = subparsers.add_parser('versions')
     versions_subparser = versions_parser.add_subparsers(dest='versions_sub_command', required=True)
+
+    parser_versions_create = versions_subparser.add_parser('list', help='list versions')
+    parser_versions_create.set_defaults(func=func_list_versions)
 
     parser_versions_create = versions_subparser.add_parser('create', help='create new version')
     parser_versions_create.add_argument('tag')
@@ -169,11 +188,10 @@ def parse_arguments():
 
     report_parser = subparsers.add_parser('report')
     report_parser.add_argument('tag', nargs='?')
-    report_parser.add_argument('--format', choices=['yaml', 'html'], default='html')
-    report_parser.add_argument('--content-regex', default='^.*$')
+    report_parser.add_argument('--format', choices=['yaml', 'html', 'markdown'], default='html')
     report_parser.set_defaults(func=func_report)
 
-    options = parser.parse_args((['@' + DEFAFULT_CONFIG_FILE] if os.path.isfile(DEFAFULT_CONFIG_FILE) else []) + sys.argv[1:])
+    options = parser.parse_args(sys.argv[1:])
     return options
 
 
@@ -192,13 +210,21 @@ def get_diff(previous_ref, current_ref):
     
 
 def get_version_status(options, tag, version):
-    status = {'tag': tag,
-              'milestones': version.get_milestones(),
-              'scope': version.scope}
+    status = {'tag': tag}
+    ms = version._raw.get('milestones', {})
+    milestones = [dict(name=name, **x) for name, x in ms.items()]
+    sorted_milestones = sorted(milestones, key=lambda x: datetime.strptime(x['date'], TIME_PATTERN))
+    status['milestones'] = sorted_milestones
     tags = get_tags(tag)
     release_tag = next((x for x in tags if x['tag'] == tag), None)
     status['released'] = any(x for x in tags if tag == x['tag'])
     release_candidates_tags = [x for x in tags if re.match('^.*-rc.([0-9]*)$', x['tag'])]
+    scope_status = {}
+    for ms in reversed(milestones):
+        for content in ms['scope']:
+            scope_status.setdefault(content['ref'], {'ref': content['ref'], 'summary': content['summary'], 'labels': content['labels'], 'milestones': []})
+            scope_status[content['ref']]['milestones'].append(ms['name'])
+    status['scope_status'] = scope_status.values()
     for x in release_candidates_tags:
         x['release_candidate_number'] = re.match('^.*-rc.([0-9]*)$', x['tag']).groups()[0]
         x['status'] = 'rejected'
@@ -215,12 +241,13 @@ def get_version_status(options, tag, version):
     status['release_candidates'] = release_candidates_tags
     for i in range(1, len(release_candidates_tags)):
         release_candidates_tags[i]['commits'] = get_diff(release_candidates_tags[i - 1]['tag'], release_candidates_tags[i]['tag'])
-        release_candidates_tags[i]['content'] = list(set(itertools.chain(*[re.findall(options.content_regex, x) for x in release_candidates_tags[i]['commits']])))
+        release_candidates_tags[i]['content'] = list(set(itertools.chain(*[re.findall(options.jira_content_regex, x) for x in release_candidates_tags[i]['commits']])))
 
     return status
 
 
 HTML_TEMPLATE = Template(open(os.path.join(os.path.dirname(__file__), 'report.template.html')).read())
+MARKDOWN_TEMPLATE = Template(open(os.path.join(os.path.dirname(__file__), 'report.template.md')).read())
 
 def get_status(options):
     if options.tag:
@@ -234,6 +261,8 @@ def func_report(options):
         yaml.dump(status, sys.stdout)
     elif options.format == 'html':
         sys.stdout.write(HTML_TEMPLATE.render(status=status))
+    elif options.format == 'markdown':
+        sys.stdout.write(MARKDOWN_TEMPLATE.render(status=status))
 
 def main():
     options = parse_arguments()
@@ -244,6 +273,9 @@ def main():
     logging.getLogger('urllib3').setLevel(logging.INFO)
     logging.debug('got options:')
     logging.debug(options)
+    if not os.path.isfile(options.versions_file):
+        logging.debug('creating versions file %s', options.versions_file)
+        yaml.dump({'versions': []}, open(options.versions_file, 'w'))
     options.current_context = yaml.load(open(options.versions_file))
     options.versions = load_versions(options.current_context['versions'])
     options.func(options)
@@ -278,18 +310,31 @@ class Version:
         else:
             self.set_milestone('release', value)
 
+    def get_milestones(self):
+        return {name: Milestone(x) for name, x in self._raw.get('milestones', {}).items()}
+
+    def set_milestone(self, milestone, date):
+        self._raw.setdefault('milestones', {})[milestone] = {'date': date.strftime(TIME_PATTERN)}
+
+    def remove_milestone(self, milestone):
+        del self._raw['milestones'][milestone]
+
+class Milestone:
+
+    def __init__(self, raw_entry):
+        self._raw = raw_entry
+
+    @property
+    def date(self):
+        return to_date(self._raw['date'])
+
     @property
     def scope(self):
         return self._raw.get('scope', [])
 
-    def get_milestones(self):
-        return {x: to_date(y) for x, y in self._raw.get('milestones', {}).items()}
-
-    def set_milestone(self, milestone, date):
-        self._raw.setdefault('milestones', {})[milestone] = date.strftime(TIME_PATTERN)
-
-    def remove_milestone(self, milestone):
-        del self._raw['milestones'][milestone]
+    @scope.setter
+    def scope(self, value):
+        self._raw['scope'] = value
 
 def to_date(val):
     if not val:

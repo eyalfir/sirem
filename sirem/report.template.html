@@ -6,70 +6,84 @@
 		{% for version in status %}
 		<h2> {{version.tag}}</h2>
 		<div style="padding-left: 100px">
-		<h3>milestones</h3>
-		<table class="table">
-			<thead>
-				<tr>
-					<th scope="col">milestone</th>
-					<th scope="col">date</th>
-				</tr>
-			</thead>
-			<tbody>
-				{% for milestone, date in version.milestones.items() %}
-				<tr>
-					<td>{{milestone}}</td>
-					<td>{{date}}</td>
-				</tr>
-				{% endfor %}
-			</tbody>
-		</table>
-		<h3>scope</h3>
-		<table class="table">
-			<thead>
-				<tr>
-					<th>ref</th>
-					<th>priority</th>
-					<th>summary</th>
-				</tr>
-			</thead>
-			<tbody>
-				{% for content in version.scope %}
-				<tr>
-					<td>{{content.ref}}</td>
-					<td>{{content.priority}}</td>
-					<td>{{content.summary}}</td>
-				</tr>
-				{% endfor %}
-			</tbody>
-		</table>
-		<h3>release candidates</h3>
-		<table class="table">
-			<thead>
-				<tr>
-					<th>tag</th>
-					<th>date</th>
-					<th>status</th>
-				</tr>
-			</thead>
-			<tbody>
-				{% for tag in version.release_candidates %}
-				<tr>
-					<td>{{tag.tag}}</td>
-					<td>{{tag.date}}</td>
-					<td>{{tag.status}}</td>
-				</tr>
-				<tr>
-					<td colspan=3>
-						<ul>
-							{% for content in tag.content %}
-							<li>{{content}}</li>
-							{% endfor %}
-						</ul>
-					</td>
-				</tr>
-				{% endfor %}
-			</tbody>
-		</table>
+			<h3>milestones</h3>
+			<table class="table">
+				<thead>
+					<tr>
+						<th scope="col">milestone</th>
+						<th scope="col">date</th>
+					</tr>
+				</thead>
+				<tbody>
+					{% for milestone in version.milestones %}
+					<tr>
+						<td>{{milestone.name}}</td>
+						<td>{{milestone.date}}</td>
+					</tr>
+					{% endfor %}
+				</tbody>
+			</table>
+			<h3>scope</h3>
+			<table class="table">
+				<thead>
+					<tr>
+						<th style="width:auto">ref</th>
+						<th>summary</th>
+						<th>labels</th>
+						<th>milestones</th>
+					</tr>
+				</thead>
+				<tbody>
+					{% for scope in version.scope_status %}
+					<tr>
+						<td style="width:auto;white-space:nowrap">{{scope.ref}}</td>
+						<td>{{scope.summary}}</td>
+						<td>
+							<ul>
+								{% for label in scope.labels %}
+								<li>{{label}}</li>
+								{% endfor %}
+							</ul>
+						</td>
+						<td>
+							<ul>
+								{% for ms in scope.milestones %}
+								<li>{{ms}}</li>
+								{% endfor %}
+							</ul>
+						</td>
+					</tr>
+					{% endfor %}
+				</tbody>
+			</table>
+			<h3>release candidates</h3>
+			<table class="table">
+				<thead>
+					<tr>
+						<th>tag</th>
+						<th>date</th>
+						<th>status</th>
+					</tr>
+				</thead>
+				<tbody>
+					{% for tag in version.release_candidates %}
+					<tr>
+						<td>{{tag.tag}}</td>
+						<td>{{tag.date}}</td>
+						<td>{{tag.status}}</td>
+					</tr>
+					<tr>
+						<td colspan=3>
+							<ul>
+								{% for content in tag.content %}
+								<li>{{content}}</li>
+								{% endfor %}
+							</ul>
+						</td>
+					</tr>
+					{% endfor %}
+				</tbody>
+			</table>
 		</div>
 		{% endfor %}
 	</body>
