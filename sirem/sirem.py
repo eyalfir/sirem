@@ -1,4 +1,5 @@
 import re
+from functools import partial
 import argparse
 import itertools
 import subprocess
@@ -56,7 +57,7 @@ def func_import_scope(options):
         sys.exit(EXIT_CODE_VERSION_NOT_FOUND)
     version = options.versions[options.version]
     if options.milestone not in version.get_milestones():
-        version.set_milestone(option.milestone, datetime.now().date())
+        version.set_milestone(options.milestone, datetime.now().date())
     scope_entries = [jira_issue_to_dict(x) for x in issues]
     version.get_milestones()[options.milestone].scope = scope_entries
     dump(options)
@@ -76,7 +77,7 @@ def func_sync_jira(options):
                 jira.create_version(project=options.jira_project, name=jira_version, description=version.description, releaseDate=version.release_date)
             continue
         jira_version_content = jira_versions[jira_version]
-        if jira_version_content.raw.get('description') != version.description:
+        if re.sub('^None$', '', jira_version_content.raw.get('description', '')) != version.description:
             logging.debug('updating description of version %s from "%s" to "%s"', version.tag, jira_version_content.raw.get('description'), version.description)
             if not options.dry_run:
                 jira_version_content.update(description=version.description)
@@ -226,7 +227,7 @@ def get_version_status(options, tag, version):
             scope_status[content['ref']]['milestones'].append(ms['name'])
     status['scope_status'] = list(scope_status.values())
     for x in release_candidates_tags:
-        x['release_candidate_number'] = re.match('^.*-rc.([0-9]*)$', x['tag']).groups()[0]
+        x['release_candidate_number'] = int(re.match('^.*-rc.([0-9]*)$', x['tag']).groups()[0])
         x['status'] = 'rejected'
     if not release_candidates_tags:
         return status
@@ -255,6 +256,12 @@ def get_status(options):
     else:
         return [get_version_status(options, x.tag, x) for x in options.versions.values()]
 
+def content_link(ref, options):
+    if options.jira_baseurl:
+        return '[{ref}]({jira}/browse/{ref})'.format(jira=options.jira_baseurl.rstrip('/'), ref=ref)
+    else:
+        return ref
+
 def func_report(options):
     status = get_status(options)
     if options.format == 'yaml':
@@ -262,7 +269,7 @@ def func_report(options):
     elif options.format == 'html':
         sys.stdout.write(HTML_TEMPLATE.render(status=status))
     elif options.format == 'markdown':
-        sys.stdout.write(MARKDOWN_TEMPLATE.render(status=status))
+        sys.stdout.write(MARKDOWN_TEMPLATE.render(status=status, options=options, content_link=content_link, partial=partial, map=map))
 
 def main():
     options = parse_arguments()
@@ -301,7 +308,10 @@ class Version:
 
     @property
     def release_date(self):
-        return to_date(self.get_milestones().get('release'))
+        if 'release' not in self.get_milestones():
+            return None
+        else:
+            return self.get_milestones()['release'].date
 
     @release_date.setter
     def release_date(self, value):
