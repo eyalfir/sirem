@@ -207,15 +207,15 @@ def parse_arguments():
     parser_versions_remove_milestone.add_argument('milestone')
     parser_versions_remove_milestone.set_defaults(func=func_remove_milestone)
 
-    parser_versions_set_description = versions_subparser.add_parser('remove-milestone', help='remove milestone from version')
+    parser_versions_set_description = versions_subparser.add_parser('set-description', help='set description of a versino')
     parser_versions_set_description.add_argument('tag')
     parser_versions_set_description.add_argument('--description', required=True)
     parser_versions_set_description.set_defaults(func=func_set_description)
 
-    parser_versions_set_description = versions_subparser.add_parser('reorder', help='move vesion up or down')
-    parser_versions_set_description.add_argument('tag')
-    parser_versions_set_description.add_argument('places', help='how many places to move down (positive number) or up (negative number)')
-    parser_versions_set_description.set_defaults(func=func_reorder_version)
+    parser_versions_set_reorder = versions_subparser.add_parser('reorder', help='move vesion up or down')
+    parser_versions_set_reorder.add_argument('tag')
+    parser_versions_set_reorder.add_argument('places', help='how many places to move down (positive number) or up (negative number)')
+    parser_versions_set_reorder.set_defaults(func=func_reorder_version)
 
     report_parser = subparsers.add_parser('report')
     report_parser.add_argument('tag', nargs='?')
