@@ -18,7 +18,7 @@
 
 |ref|summary|labels|milestones|
 |-|-|-|-|
-{% for scope in version.scope_status %}|{{content_link(scope.ref, options)}}|{{scope.summary}}|{{scope.labels | join('<br>')}}|{{scope.milestones | join('<br>')}}|
+{% for scope in version.scope_status %}|{{content_link(scope.ref, options)}}|{{scope.summary}}|{{map(label_to_emoji, scope.labels) | join('<br>')}}|{{map(label_to_emoji, scope.milestones) | join('<br>')}}|
 {% endfor %}
 
 ## Release Candidates

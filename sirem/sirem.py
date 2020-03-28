@@ -1,4 +1,6 @@
 import re
+import pypandoc
+import random
 from functools import partial
 import argparse
 import itertools
@@ -43,6 +45,16 @@ def func_remove_milestone(options):
     version = options.versions[options.tag]
     version.remove_milestone(options.milestone)
     dump(options)
+
+ALL_EMOJIS=['sushi', 'rice', 'cookie', 'grapes', 'peach', 'pear', 'banana', 'cherries', 'watermelon', 'pizza', 'beer', 'cake', 'egg', 'green_apple', 'apple', 'icecream', 'meat_on_bone', 'hamburger', 'poultry_leg', 'dango', 'doughnut', 'ice_cream', 'birthday', 'candy', 'lollipop', 'lemon']
+def label_to_emoji(label, current_mapping={}, free_emojis=ALL_EMOJIS):
+    if label in current_mapping:
+        emoji = current_mapping[label]
+    else:
+        emoji = random.choice(free_emojis)
+        free_emojis.remove(emoji)
+        current_mapping[label] = emoji
+    return ':' + emoji + ':' + label
 
 def func_import_scope(options):
     jira_version = options.jira_version_template.format(version=options.version)
@@ -101,6 +113,19 @@ def func_create_version(options):
     if options.release_date:
         version['milestones'] = {'release': options.release_date}
     options.current_context['versions'].append(version)
+    dump(options)
+
+def func_reorder_version(options):
+    try:
+        entry = next(i for i, x in enumerate(options.current_context['versions']) if x['tag'] == options.tag)
+    except StopIteration:
+        logging.error('no entry found with tag %s', options.tag)
+        sys.exit(EXIT_CODE_VERSION_NOT_FOUND)
+    versions = options.current_context['versions']
+    moving_version = versions[entry]
+    new_versions = versions[:entry] + versions[entry + 1:]
+    new_versions.insert(entry + int(options.places), moving_version)
+    options.current_context['versions'] = new_versions
     dump(options)
 
 def func_remove_version(options):
@@ -187,6 +212,11 @@ def parse_arguments():
     parser_versions_set_description.add_argument('--description', required=True)
     parser_versions_set_description.set_defaults(func=func_set_description)
 
+    parser_versions_set_description = versions_subparser.add_parser('reorder', help='move vesion up or down')
+    parser_versions_set_description.add_argument('tag')
+    parser_versions_set_description.add_argument('places', help='how many places to move down (positive number) or up (negative number)')
+    parser_versions_set_description.set_defaults(func=func_reorder_version)
+
     report_parser = subparsers.add_parser('report')
     report_parser.add_argument('tag', nargs='?')
     report_parser.add_argument('--format', choices=['yaml', 'html', 'markdown'], default='html')
@@ -247,7 +277,6 @@ def get_version_status(options, tag, version):
     return status
 
 
-HTML_TEMPLATE = Template(open(os.path.join(os.path.dirname(__file__), 'report.template.html')).read())
 MARKDOWN_TEMPLATE = Template(open(os.path.join(os.path.dirname(__file__), 'report.template.md')).read())
 
 def get_status(options):
@@ -266,10 +295,13 @@ def func_report(options):
     status = get_status(options)
     if options.format == 'yaml':
         yaml.dump(status, sys.stdout)
-    elif options.format == 'html':
-        sys.stdout.write(HTML_TEMPLATE.render(status=status))
-    elif options.format == 'markdown':
-        sys.stdout.write(MARKDOWN_TEMPLATE.render(status=status, options=options, content_link=content_link, partial=partial, map=map))
+    elif options.format in {'markdown', 'html'}:
+        markdown = MARKDOWN_TEMPLATE.render(status=status, options=options, content_link=content_link, partial=partial, map=map, label_to_emoji=label_to_emoji)
+        if options.format == 'markdown':
+            sys.stdout.write(markdown)
+        elif options.format == 'html':
+            html = pypandoc.convert_text(source=markdown, to='html', format='gfm', extra_args=('--include-in-header=' + os.path.realpath(os.path.join(os.path.dirname(__file__), 'github-pandoc.css')),))
+            sys.stdout.write(html)
 
 def main():
     options = parse_arguments()
