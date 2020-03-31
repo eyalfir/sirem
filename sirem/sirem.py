@@ -228,7 +228,8 @@ def parse_arguments():
 
 def get_tags(prefix):
     out, err = subprocess.Popen(['git', 'for-each-ref', '--format=%(refname:short);%(taggerdate:short)%(committerdate:short)', 'refs/tags/%s*' % prefix], stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
-    return [{"tag": x.split(';')[0], "date": datetime.strptime(x.split(';')[1], TIME_PATTERN).date()} for x in out.decode('UTF-8').splitlines()]
+    all_responses = [{"tag": x.split(';')[0], "date": datetime.strptime(x.split(';')[1], TIME_PATTERN).date()} for x in out.decode('UTF-8').splitlines()]
+    return [x for x in all_responses if re.match(prefix + '(-rc.[0-9]*|)$', x['tag'])]
 
 def get_commit(tag):
     return subprocess.Popen(['git', 'log', tag, '-1', '--format="%H"'], stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()[0].decode('UTF-8')
