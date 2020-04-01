@@ -36,6 +36,10 @@ def func_set_description(options):
     version.description = options.description
     dump(options)
 
+def func_get_milestones(options):
+    version = options.versions[options.tag]
+    yaml.dump({options.tag: {ms_name: ms.date for ms_name, ms in version.get_milestones().items()}}, sys.stdout)
+
 def func_set_milestone(options):
     version = options.versions[options.tag]
     version.set_milestone(options.milestone, to_date(options.date))
@@ -202,6 +206,10 @@ def parse_arguments():
     parser_versions_set_milestone.add_argument('date')
     parser_versions_set_milestone.set_defaults(func=func_set_milestone)
 
+    parser_versions_get_milestones = versions_subparser.add_parser('get-milestones', help='get all milestones for version')
+    parser_versions_get_milestones.add_argument('tag')
+    parser_versions_get_milestones.set_defaults(func=func_get_milestones)
+
     parser_versions_remove_milestone = versions_subparser.add_parser('remove-milestone', help='remove milestone from version')
     parser_versions_remove_milestone.add_argument('tag')
     parser_versions_remove_milestone.add_argument('milestone')
@@ -253,7 +261,7 @@ def get_version_status(options, tag, version):
     release_candidates_tags = [x for x in tags if re.match('^.*-rc.([0-9]*)$', x['tag'])]
     scope_status = {}
     for ms in reversed(milestones):
-        for content in ms['scope']:
+        for content in ms.get('scope', []):
             scope_status.setdefault(content['ref'], {'ref': content['ref'], 'summary': content['summary'], 'labels': content['labels'], 'milestones': []})
             scope_status[content['ref']]['milestones'].append(ms['name'])
     status['scope_status'] = list(scope_status.values())
