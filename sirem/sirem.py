@@ -251,6 +251,7 @@ def get_diff(previous_ref, current_ref):
 
 def get_version_status(options, tag, version):
     status = {'tag': tag}
+    status['previous_version'] = version.previous_version
     ms = version._raw.get('milestones', {})
     milestones = [dict(name=name, **x) for name, x in ms.items()]
     sorted_milestones = sorted(milestones, key=lambda x: datetime.strptime(x['date'], TIME_PATTERN))
@@ -268,21 +269,29 @@ def get_version_status(options, tag, version):
     for x in release_candidates_tags:
         x['release_candidate_number'] = int(re.match('^.*-rc.([0-9]*)$', x['tag']).groups()[0])
         x['status'] = 'rejected'
-    if not release_candidates_tags:
-        return status
     release_candidates_tags.sort(key=lambda x: x['release_candidate_number'])
     if release_tag:
+        if not release_candidates_tags:
+            release_tag['release_candidate_number'] = 1
+            release_candidates_tags.append(release_tag)
         if get_commit(release_candidates_tags[-1]['tag']) == get_commit(release_tag['tag']):
             release_candidates_tags[-1]['status'] = 'approved'
         else:
             release_candidates_tags[-1]['status'] = 'rejected'
-    else:
+    elif release_candidates_tags:
         release_candidates_tags[-1]['status'] = 'pending'
     status['release_candidates'] = release_candidates_tags
-    for i in range(1, len(release_candidates_tags)):
-        release_candidates_tags[i]['commits'] = get_diff(release_candidates_tags[i - 1]['tag'], release_candidates_tags[i]['tag'])
-        release_candidates_tags[i]['content'] = list(set(itertools.chain(*[re.findall(options.content_regex, x) for x in release_candidates_tags[i]['commits']])))
-
+    for i in range(len(release_candidates_tags)):
+        previous_tag = release_candidates_tags[i - 1]['tag'] if i > 0 else version.previous_version
+        if not previous_tag:
+            commits = []
+            content = {}
+        else:
+            commits = get_diff(previous_tag, release_candidates_tags[i]['tag'])
+            content_refs = list(set(itertools.chain(*[re.findall(options.content_regex, x) for x in commits])))
+            content = {x: scope_status.get(x, {}).get('summary') for x in content_refs}
+        release_candidates_tags[i]['commits'] = commits
+        release_candidates_tags[i]['content'] = content
     return status
 
 
@@ -294,18 +303,12 @@ def get_status(options):
     else:
         return [get_version_status(options, x.tag, x) for x in options.versions.values()]
 
-def content_link(ref, options):
-    if options.jira_baseurl:
-        return '[{ref}]({jira}/browse/{ref})'.format(jira=options.jira_baseurl.rstrip('/'), ref=ref)
-    else:
-        return ref
-
 def func_report(options):
     status = get_status(options)
     if options.format == 'yaml':
         yaml.dump(status, sys.stdout)
     elif options.format in {'markdown', 'html'}:
-        markdown = MARKDOWN_TEMPLATE.render(status=status, options=options, content_link=content_link, partial=partial, map=map, label_to_emoji=label_to_emoji)
+        markdown = MARKDOWN_TEMPLATE.render(status=status, options=options, partial=partial, map=map, label_to_emoji=label_to_emoji)
         if options.format == 'markdown':
             sys.stdout.write(markdown)
         elif options.format == 'html':
@@ -370,6 +373,15 @@ class Version:
     def remove_milestone(self, milestone):
         del self._raw['milestones'][milestone]
 
+    @property
+    def previous_version(self):
+        return self._raw.get('previous_version')
+
+    @previous_version.setter
+    def previous_version(self, value):
+        self._raw['previous_version'] = value
+
+
 class Milestone:
 
     def __init__(self, raw_entry):
@@ -409,4 +421,7 @@ def version_tuple_from_raw(raw_version_entry):
     return (tag, version)
 
 def load_versions(raw_versions_list):
-    return dict(version_tuple_from_raw(x) for x in raw_versions_list)
+    d = dict(version_tuple_from_raw(x) for x in raw_versions_list)
+    for i in range(1, len(raw_versions_list)):
+        d[raw_versions_list[i]['tag']].previous_version = d[raw_versions_list[i - 1]['tag']].tag
+    return d
